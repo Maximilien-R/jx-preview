@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/jenkins-x-plugins/jx-preview/pkg/tracing"
 	"github.com/jenkins-x/jx-helpers/v3/pkg/files"
 	"github.com/jenkins-x/jx-helpers/v3/pkg/gitclient"
 	"github.com/jenkins-x/jx-helpers/v3/pkg/gitclient/giturl"
@@ -22,6 +23,7 @@ var info = termcolor.ColorInfo
 
 // CreateJXValuesFile creates the jx-values.yaml file from the dev environment
 func CreateJXValuesFile(gitter gitclient.Interface, jxClient jxc.Interface, namespace, dir, previewNamespace, gitUser, gitToken string) (string, error) {
+	defer tracing.TimeIt("JXValues.CreateJXValuesFile")()
 	fileName := filepath.Join(dir, "jx-values.yaml")
 
 	devEnv, err := jxenv.GetDevEnvironment(jxClient, namespace)

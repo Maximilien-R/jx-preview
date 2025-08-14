@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jenkins-x-plugins/jx-preview/pkg/common"
+	"github.com/jenkins-x-plugins/jx-preview/pkg/tracing"
 
 	"github.com/jenkins-x/jx-helpers/v3/pkg/kube/pods"
 	corev1 "k8s.io/api/core/v1"
@@ -143,12 +144,16 @@ func (o *Options) AddFlags(cmd *cobra.Command) {
 
 // Run implements a helmfile based preview environment
 func (o *Options) Run() error {
+	defer tracing.TimeIt("Create.Run")()
+
 	err := o.Validate()
 	if err != nil {
 		return fmt.Errorf("failed to validate options: %w", err)
 	}
 
+	discoverPullRequestTimeItEnding := tracing.TimeIt("PullRequestOptions.DiscoverPullRequest")
 	pr, err := o.DiscoverPullRequest()
+	discoverPullRequestTimeItEnding()
 	if err != nil {
 		return fmt.Errorf("failed to discover pull request: %w", err)
 	}
@@ -221,7 +226,9 @@ func (o *Options) Run() error {
 		// let's modify the preview
 		preview.Spec.Resources.Name = o.Repository
 		preview.Spec.Resources.URL = url
+		previewUpdateTimeItEnding := tracing.TimeIt("Create.PreviewUpdate")
 		preview, err = o.PreviewClient.PreviewV1alpha1().Previews(o.Namespace).Update(ctx, preview, metav1.UpdateOptions{})
+		previewUpdateTimeItEnding()
 		if err != nil {
 			return fmt.Errorf("failed to update preview %s: %w", preview.Name, err)
 		}
@@ -250,6 +257,7 @@ func (o *Options) Run() error {
 }
 
 func toAuthor(to *v1alpha1.UserSpec, from *scm.User) {
+	defer tracing.TimeIt("Create.toAuthor")()
 	if from == nil {
 		return
 	}
@@ -266,6 +274,7 @@ func toAuthor(to *v1alpha1.UserSpec, from *scm.User) {
 
 // Validate validates the inputs are valid
 func (o *Options) Validate() error {
+	defer tracing.TimeIt("Create.Validate")()
 	if o.CommandRunner == nil {
 		o.CommandRunner = cmdrunner.QuietCommandRunner
 	}
@@ -320,6 +329,7 @@ func (o *Options) Validate() error {
 }
 
 func (o *Options) createDestroyCommand(envVars map[string]string) v1alpha1.Command {
+	defer tracing.TimeIt("Create.createDestroyCommand")()
 	args := []string{"--file", o.PreviewHelmfile}
 	if o.Debug {
 		args = append(args, "--debug")
@@ -345,6 +355,7 @@ func (o *Options) createDestroyCommand(envVars map[string]string) v1alpha1.Comma
 }
 
 func (o *Options) helmfileSyncPreview(envVars map[string]string) error {
+	defer tracing.TimeIt("Create.helmfileSyncPreview")()
 	log.Logger().Infof("passing env vars into helmfile: %#v", envVars)
 
 	args := []string{"--file", o.PreviewHelmfile}
@@ -356,23 +367,27 @@ func (o *Options) helmfileSyncPreview(envVars map[string]string) error {
 	}
 
 	// first lets always make sure we have the latest helm repo updates
+	helmfileReposTimeitEnding := tracing.TimeIt("Create.helmfileRepos")
 	c := &cmdrunner.Command{
 		Name: "helmfile",
 		Args: append(args, "repos"),
 		Env:  envVars,
 	}
 	_, err := o.CommandRunner(c)
+	helmfileReposTimeitEnding()
 	if err != nil {
 		return fmt.Errorf("failed to run helmfile repos: %w", err)
 	}
 
 	// now install the charts using sync
+	helmfileSyncTimeitEnding := tracing.TimeIt("Create.helmfileSync")
 	c = &cmdrunner.Command{
 		Name: "helmfile",
 		Args: append(args, "sync"),
 		Env:  envVars,
 	}
 	_, syncErr := o.CommandRunner(c)
+	helmfileSyncTimeitEnding()
 	if syncErr != nil {
 		syncErr = fmt.Errorf("failed to run helmfile sync: %w", syncErr)
 
@@ -385,6 +400,7 @@ func (o *Options) helmfileSyncPreview(envVars map[string]string) error {
 }
 
 func (o *Options) ProcessHelmfileSyncTimeoutOrReturnOriginalError(syncError error) error {
+	defer tracing.TimeIt("Create.ProcessHelmfileSyncTimeoutOrReturnOriginalError")()
 	if timedOut.MatchString(syncError.Error()) {
 		log.Logger().Infof("detected a failure on the preview environment %s so looking for an erroring pod", o.PreviewNamespace)
 		_, podsInNs, err := pods.GetPods(o.KubeClient, o.PreviewNamespace, "")
@@ -405,6 +421,7 @@ func (o *Options) ProcessHelmfileSyncTimeoutOrReturnOriginalError(syncError erro
 }
 
 func (o *Options) CreateHelmfileEnvVars(fn func(string) (string, error)) (map[string]string, error) {
+	defer tracing.TimeIt("Create.CreateHelmfileEnvVars")()
 	env := map[string]string{}
 	mandatoryEnvVars := []envVar{
 		{
@@ -461,6 +478,7 @@ func (o *Options) CreateHelmfileEnvVars(fn func(string) (string, error)) (map[st
 }
 
 func (o *Options) createPreviewNamespace() (string, error) {
+	defer tracing.TimeIt("Create.createPreviewNamespace")()
 	prefix := o.Namespace + "-"
 	prName := o.Owner + "-" + o.Repository + "-pr-" + strconv.Itoa(o.Number)
 
@@ -480,6 +498,7 @@ func (o *Options) createPreviewNamespace() (string, error) {
 }
 
 func findAllServiceNamesInNamespace(client kubernetes.Interface, namespace string) ([]string, error) {
+	defer tracing.TimeIt("Create.findAllServiceNamesInNamespace")()
 	serviceList, err := client.CoreV1().Services(namespace).List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return nil, err
@@ -493,6 +512,7 @@ func findAllServiceNamesInNamespace(client kubernetes.Interface, namespace strin
 
 // findPreviewURL finds the preview URL
 func (o *Options) findPreviewURL(envVars map[string]string) (string, error) {
+	defer tracing.TimeIt("Create.findPreviewURL")()
 	releases, err := helmfiles.ListReleases(o.CommandRunner, o.PreviewHelmfile, envVars)
 	if err != nil {
 		return "", fmt.Errorf("failed to read helmfile releases: %w", err)
@@ -556,6 +576,7 @@ func (o *Options) findPreviewURL(envVars map[string]string) (string, error) {
 }
 
 func (o *Options) updatePipelineActivity(applicationURL, pullRequestURL string) {
+	defer tracing.TimeIt("Create.updatePipelineActivity")()
 	if applicationURL == "" {
 		return
 	}
@@ -617,7 +638,7 @@ func (o *Options) updatePipelineActivity(applicationURL, pullRequestURL string) 
 }
 
 func (o *Options) commentOnPullRequest(comment string) error {
-
+	defer tracing.TimeIt("Create.commentOnPullRequest")()
 	ctx := context.Background()
 	commentInput := &scm.CommentInput{
 		Body: comment,
@@ -635,6 +656,7 @@ func (o *Options) commentOnPullRequest(comment string) error {
 // lets find the charts folder and default the preview helmfile to that
 // then generate a helmfile.yaml.gotmpl if its missing
 func (o *Options) DiscoverPreviewHelmfile() error {
+	defer tracing.TimeIt("Create.DiscoverPreviewHelmfile")()
 	helmfileUpdated := false
 	if o.PreviewHelmfile == "" {
 		chartsDir := filepath.Join(o.Dir, "charts")
@@ -688,8 +710,8 @@ func (o *Options) DiscoverPreviewHelmfile() error {
 			if err != nil {
 				return fmt.Errorf("failed to split helmfile into 2 documents: %w", err)
 			}
-			log.Logger().Infof("split helmfile into 2 documents for compatibility with helmfile version 1: %s", o.PreviewHelmfile)
 			helmfileUpdated = helmfileUpdated || changed
+			log.Logger().Infof("split helmfile into 2 documents for compatibility with helmfile version 1: %s: %t", o.PreviewHelmfile, helmfileUpdated)
 		}
 		if !helmfileUpdated {
 			return nil
@@ -775,6 +797,7 @@ func (o *Options) DiscoverPreviewHelmfile() error {
 
 // splitHelmfile by inserting document separator after environment map
 func splitHelmfile(helmfile string) (bool, error) {
+	defer tracing.TimeIt("Create.splitHelmfile")()
 	content, err := os.ReadFile(helmfile)
 	if err != nil {
 		return false, fmt.Errorf("failed to open %s for reading: %w", helmfile, err)
@@ -813,6 +836,7 @@ func splitHelmfile(helmfile string) (bool, error) {
 }
 
 func hasMultipleDocuments(helmfile string) (bool, error) {
+	defer tracing.TimeIt("Create.hasMultipleDocuments")()
 	open, err := os.Open(helmfile)
 	if err != nil {
 		return false, fmt.Errorf("failed to open %s: %w", helmfile, err)
@@ -829,6 +853,7 @@ func hasMultipleDocuments(helmfile string) (bool, error) {
 }
 
 func (o *Options) watchNamespaceStart() error {
+	defer tracing.TimeIt("Create.watchNamespaceStart")()
 	previewNamespace := o.Preview.Spec.Resources.Namespace
 	cmd := exec.Command("kubectl", "get", "event", "-w", "-n", previewNamespace)
 	o.WatchNamespaceCommand = cmd
@@ -865,6 +890,7 @@ func (o *Options) watchNamespaceStart() error {
 }
 
 func (o *Options) IfPodIsFailedShareLogs(pod *corev1.Pod, previewNamespace string) error {
+	defer tracing.TimeIt("Create.IfPodIsFailedShareLogs")()
 	// get container with highest restarts
 	var highestRestarts int32
 	var highestRestartContainer string
@@ -904,6 +930,7 @@ func (o *Options) IfPodIsFailedShareLogs(pod *corev1.Pod, previewNamespace strin
 }
 
 func (o *Options) watchNamespaceStop() error {
+	defer tracing.TimeIt("Create.watchNamespaceStop")()
 	if o.WatchNamespaceCommand != nil && o.WatchNamespaceCommand.Process != nil {
 		err := o.WatchNamespaceCommand.Process.Kill()
 		if err != nil {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/jenkins-x-plugins/jx-preview/pkg/apis/preview/v1alpha1"
 	"github.com/jenkins-x-plugins/jx-preview/pkg/client/clientset/versioned"
+	"github.com/jenkins-x-plugins/jx-preview/pkg/tracing"
 	"github.com/jenkins-x/go-scm/scm"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -14,6 +15,7 @@ import (
 
 // GetOrCreatePreview lazy creates the preview client and/or the current namespace if not already defined
 func GetOrCreatePreview(client versioned.Interface, ns string, pr *scm.PullRequest, destroyCmd *v1alpha1.Command, gitURL, previewNamespace, path string) (*v1alpha1.Preview, bool, error) {
+	defer tracing.TimeIt("Previews.GetOrCreatePreview")()
 	create := false
 
 	ctx := context.Background()

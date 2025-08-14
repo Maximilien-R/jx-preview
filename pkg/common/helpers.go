@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/jenkins-x-plugins/jx-preview/pkg/tracing"
 	"github.com/jenkins-x/jx-helpers/v3/pkg/files"
 	"github.com/jenkins-x/jx-helpers/v3/pkg/termcolor"
 	"github.com/jenkins-x/jx-logging/v3/pkg/log"
@@ -14,6 +15,7 @@ import (
 var info = termcolor.ColorInfo
 
 func WriteOutputEnvVars(currentDir string, outputEnvVars map[string]string) error {
+	defer tracing.TimeIt("Common.WriteOutputEnvVars")()
 	path := filepath.Join(currentDir, ".jx", "variables.sh")
 
 	text := ""

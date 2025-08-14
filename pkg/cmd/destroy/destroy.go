@@ -13,6 +13,7 @@ import (
 	"github.com/jenkins-x-plugins/jx-preview/pkg/client/clientset/versioned"
 	"github.com/jenkins-x-plugins/jx-preview/pkg/previews"
 	"github.com/jenkins-x-plugins/jx-preview/pkg/rootcmd"
+	"github.com/jenkins-x-plugins/jx-preview/pkg/tracing"
 	jxc "github.com/jenkins-x/jx-api/v4/pkg/client/clientset/versioned"
 	"github.com/jenkins-x/jx-helpers/v3/pkg/cmdrunner"
 	"github.com/jenkins-x/jx-helpers/v3/pkg/cobras/helper"
@@ -88,6 +89,7 @@ func NewCmdPreviewDestroy() (*cobra.Command, *Options) {
 
 // Run implements a helmfile based preview environment
 func (o *Options) Run() error {
+	defer tracing.TimeIt("Destroy.Run")()
 	err := o.Validate()
 	if err != nil {
 		return fmt.Errorf("failed to validate options: %w", err)
@@ -132,6 +134,7 @@ func (o *Options) Run() error {
 
 // Destroy destroys a preview environment
 func (o *Options) Destroy(name string) error {
+	defer tracing.TimeIt("Destroy.Destroy")()
 	ns := o.Namespace
 
 	log.Logger().Infof("destroying preview: %s in namespace %s", info(name), info(ns))
@@ -173,7 +176,9 @@ func (o *Options) Destroy(name string) error {
 		return fmt.Errorf("failed to delete preview namespace: %w", err)
 	}
 
+	previewDeleteTimeItEnding := tracing.TimeIt("Destroy.previewDelete")
 	err = previewInterface.Delete(ctx, name, metav1.DeleteOptions{})
+	previewDeleteTimeItEnding()
 	if err != nil {
 		return fmt.Errorf("failed to delete preview %s in namespace %s: %w", name, ns, err)
 	}
@@ -183,6 +188,7 @@ func (o *Options) Destroy(name string) error {
 
 // Validate validates the inputs are valid
 func (o *Options) Validate() error {
+	defer tracing.TimeIt("Destroy.Validate")()
 	err := o.BaseOptions.Validate()
 	if err != nil {
 		return fmt.Errorf("failed to validate base options: %w", err)
@@ -214,6 +220,7 @@ func (o *Options) Validate() error {
 }
 
 func (o *Options) runDeletePreviewCommand(preview *v1alpha1.Preview, dir string) error {
+	defer tracing.TimeIt("Destroy.runDeletePreviewCommand")()
 	destroyCmd := preview.Spec.DestroyCommand
 
 	envVars := map[string]string{}
@@ -239,6 +246,7 @@ func (o *Options) runDeletePreviewCommand(preview *v1alpha1.Preview, dir string)
 }
 
 func (o *Options) deletePreviewNamespace(preview *v1alpha1.Preview) error {
+	defer tracing.TimeIt("Destroy.deletePreviewNamespace")()
 	ctx := context.Background()
 
 	previewNamespace := preview.Spec.Resources.Namespace
@@ -265,6 +273,7 @@ func (o *Options) deletePreviewNamespace(preview *v1alpha1.Preview) error {
 }
 
 func (o *Options) gitCloneSource(preview *v1alpha1.Preview) (string, error) {
+	defer tracing.TimeIt("Destroy.gitCloneSource")()
 	if o.GitClient == nil {
 		o.GitClient = cli.NewCLIClient("", o.CommandRunner)
 	}
