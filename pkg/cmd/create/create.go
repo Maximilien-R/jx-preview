@@ -88,6 +88,8 @@ type Options struct {
 	PreviewURLTimeout     time.Duration
 	NoComment             bool
 	NoWatchNamespace      bool
+	NoJXValues            bool
+	NoPreviewURL          bool
 	Debug                 bool
 	GitClient             gitclient.Interface
 	PreviewClient         versioned.Interface
@@ -129,6 +131,8 @@ func NewCmdPreviewCreate() (*cobra.Command, *Options) {
 	cmd.Flags().DurationVarP(&o.PreviewURLTimeout, "preview-url-timeout", "", time.Minute+5, "Time to wait for the preview URL to be available")
 	cmd.Flags().BoolVarP(&o.NoComment, "no-comment", "", false, "Disables commenting on the Pull Request after preview is created")
 	cmd.Flags().BoolVarP(&o.NoWatchNamespace, "no-watch", "", false, "Disables watching the preview namespace as we deploy the preview")
+	cmd.Flags().BoolVarP(&o.NoJXValues, "no-jx-values", "", false, "Disables building jx-values.yaml file")
+	cmd.Flags().BoolVarP(&o.NoPreviewURL, "no-preview-url", "", false, "Disables building preview URL")
 	cmd.Flags().BoolVarP(&o.Debug, "debug", "", false, "Enables debug logging in helmfile")
 
 	o.PullRequestOptions.AddFlags(cmd)
@@ -158,7 +162,7 @@ func (o *Options) Run() error {
 		return fmt.Errorf("failed to discover pull request: %w", err)
 	}
 
-	log.Logger().Infof("found PullRequest %s", pr.Link)
+	log.Logger().Infof("found PullRequest %s from %s", pr.Link, pr.Repository().Link)
 
 	envVars, err := o.CreateHelmfileEnvVars(nil)
 	if err != nil {
@@ -170,9 +174,11 @@ func (o *Options) Run() error {
 	// let's get the git clone URL with user/password so we can clone it again in the destroy command/CronJob
 	ctx := context.Background()
 
-	_, err = previews.CreateJXValuesFile(o.GitClient, o.JXClient, o.Namespace, filepath.Dir(o.PreviewHelmfile), envVars["PREVIEW_NAMESPACE"], o.GitUser, o.GitToken)
-	if err != nil {
-		return fmt.Errorf("failed to create the jx-values.yaml file: %w", err)
+	if !o.NoJXValues {
+		_, err = previews.CreateJXValuesFile(o.GitClient, o.JXClient, o.Namespace, filepath.Dir(o.PreviewHelmfile), envVars["PREVIEW_NAMESPACE"], o.GitUser, o.GitToken)
+		if err != nil {
+			return fmt.Errorf("failed to create the jx-values.yaml file: %w", err)
+		}
 	}
 
 	preview, _, err := previews.GetOrCreatePreview(o.PreviewClient, o.Namespace, pr, &destroyCmd, pr.Repository().Link, envVars["PREVIEW_NAMESPACE"], o.PreviewHelmfile)
@@ -204,13 +210,15 @@ func (o *Options) Run() error {
 		}
 	}
 
-	url, err := o.findPreviewURL(envVars)
-	if err != nil {
-		log.Logger().Warnf("failed to detect the preview URL %+v", err)
-	}
-
-	if url != "" && o.PreviewURLPath != "" {
-		url = stringhelpers.UrlJoin(url, o.PreviewURLPath)
+	url := ""
+	if !o.NoPreviewURL {
+		url, err = o.findPreviewURL(envVars)
+		if err != nil {
+			log.Logger().Warnf("failed to detect the preview URL %+v", err)
+		}
+		if url != "" && o.PreviewURLPath != "" {
+			url = stringhelpers.UrlJoin(url, o.PreviewURLPath)
+		}
 	}
 
 	toAuthor(&preview.Spec.PullRequest.User, &pr.Author)

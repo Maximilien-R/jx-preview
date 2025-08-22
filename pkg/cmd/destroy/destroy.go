@@ -56,6 +56,7 @@ type Options struct {
 	GitUser            string // Only used for tests
 	FailOnHelmError    bool
 	SelectAll          bool
+	NoJXValues         bool
 	PreviewClient      versioned.Interface
 	KubeClient         kubernetes.Interface
 	JXClient           jxc.Interface
@@ -84,6 +85,7 @@ func NewCmdPreviewDestroy() (*cobra.Command, *Options) {
 	cmd.Flags().StringVarP(&o.Dir, "dir", "", "", "The directory where to run the delete preview command - a git clone will be done on a temporary jx-git-xxx directory if this parameter is empty")
 	cmd.Flags().BoolVarP(&o.SelectAll, "all", "", false, "Select all the previews that match filter by default")
 	cmd.Flags().BoolVarP(&o.FailOnHelmError, "fail-on-helm", "", false, "If enabled do not try to remove the namespace or Preview resource if we fail to destroy helmfile resources")
+	cmd.Flags().BoolVarP(&o.NoJXValues, "no-jx-values", "", false, "Disables building jx-values.yaml file")
 	return cmd, o
 }
 
@@ -158,9 +160,11 @@ func (o *Options) Destroy(name string) error {
 
 	previewNamespace := preview.Spec.Resources.Namespace
 
-	_, err = previews.CreateJXValuesFile(o.GitClient, o.JXClient, o.Namespace, o.Dir, previewNamespace, o.GitUser, o.GitToken)
-	if err != nil {
-		return fmt.Errorf("failed to create the jx-values.yaml file: %w", err)
+	if !o.NoJXValues {
+		_, err = previews.CreateJXValuesFile(o.GitClient, o.JXClient, o.Namespace, o.Dir, previewNamespace, o.GitUser, o.GitToken)
+		if err != nil {
+			return fmt.Errorf("failed to create the jx-values.yaml file: %w", err)
+		}
 	}
 
 	err = o.runDeletePreviewCommand(preview, o.Dir)
