@@ -378,7 +378,7 @@ func (o *Options) helmfileSyncPreview(envVars map[string]string) error {
 	helmfileReposTimeitEnding := tracing.TimeIt("Create.helmfileRepos")
 	c := &cmdrunner.Command{
 		Name: "helmfile",
-		Args: append(args, "repos"),
+		Args: append(args, "--skip-deps", "repos"),
 		Env:  envVars,
 	}
 	_, err := o.CommandRunner(c)
@@ -387,11 +387,24 @@ func (o *Options) helmfileSyncPreview(envVars map[string]string) error {
 		return fmt.Errorf("failed to run helmfile repos: %w", err)
 	}
 
+	// second lets call helmfile deps
+	helmfileDepsTimeitEnding := tracing.TimeIt("Create.helmfileDeps")
+	c = &cmdrunner.Command{
+		Name: "helmfile",
+		Args: append(args, "deps", "--skip-repos", "--concurrency", "0"),
+		Env:  envVars,
+	}
+	_, err = o.CommandRunner(c)
+	helmfileDepsTimeitEnding()
+	if err != nil {
+		return fmt.Errorf("failed to run helmfile deps: %w", err)
+	}
+
 	// now install the charts using sync
 	helmfileSyncTimeitEnding := tracing.TimeIt("Create.helmfileSync")
 	c = &cmdrunner.Command{
 		Name: "helmfile",
-		Args: append(args, "sync"),
+		Args: append(args, "--skip-deps", "sync", "--concurrency", "0"),
 		Env:  envVars,
 	}
 	_, syncErr := o.CommandRunner(c)
