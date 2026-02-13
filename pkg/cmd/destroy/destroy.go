@@ -61,6 +61,8 @@ type Options struct {
 	GitClient          gitclient.Interface
 	CommandRunner      cmdrunner.CommandRunner
 	Input              input.Interface
+
+	ForceSkipCharts bool
 }
 
 // NewCmdPreviewDestroy creates a command object for the command
@@ -83,6 +85,7 @@ func NewCmdPreviewDestroy() (*cobra.Command, *Options) {
 	cmd.Flags().StringVarP(&o.Dir, "dir", "", "", "The directory where to run the delete preview command - a git clone will be done on a temporary jx-git-xxx directory if this parameter is empty")
 	cmd.Flags().BoolVarP(&o.SelectAll, "all", "", false, "Select all the previews that match filter by default")
 	cmd.Flags().BoolVarP(&o.FailOnHelmError, "fail-on-helm", "", false, "If enabled do not try to remove the namespace or Preview resource if we fail to destroy helmfile resources")
+	cmd.Flags().BoolVarP(&o.ForceSkipCharts, "force-skip-charts", "", false, "Don't prepare charts when destroying releases")
 	return cmd, o
 }
 
@@ -224,9 +227,15 @@ func (o *Options) runDeletePreviewCommand(preview *v1alpha1.Preview, dir string)
 	if destroyCmd.Path != "" {
 		dir = filepath.Join(dir, destroyCmd.Path)
 	}
+
+	args := destroyCmd.Args
+	if o.ForceSkipCharts {
+		args = append(args, "--skip-charts")
+	}
+
 	c := &cmdrunner.Command{
 		Name: destroyCmd.Command,
-		Args: destroyCmd.Args,
+		Args: args,
 		Dir:  dir,
 		Env:  envVars,
 	}

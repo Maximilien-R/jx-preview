@@ -97,6 +97,11 @@ type Options struct {
 	OutputEnvVars         map[string]string
 	WatchNamespaceCommand *exec.Cmd
 	Preview               *v1alpha1.Preview
+
+	SkipDeps            bool
+	SkipRepos           bool
+	Wait                bool
+	SkipChartsOnDestroy bool
 }
 
 type envVar struct {
@@ -128,6 +133,10 @@ func NewCmdPreviewCreate() (*cobra.Command, *Options) {
 	cmd.Flags().DurationVarP(&o.PreviewURLTimeout, "preview-url-timeout", "", time.Minute+5, "Time to wait for the preview URL to be available")
 	cmd.Flags().BoolVarP(&o.NoComment, "no-comment", "", false, "Disables commenting on the Pull Request after preview is created")
 	cmd.Flags().BoolVarP(&o.NoWatchNamespace, "no-watch", "", false, "Disables watching the preview namespace as we deploy the preview")
+	cmd.Flags().BoolVarP(&o.SkipDeps, "skip-deps", "", false, "Disables helmfile deps on helmfile sync")
+	cmd.Flags().BoolVarP(&o.SkipRepos, "skip-repos", "", false, "Disables helmfile repos on helmfile sync")
+	cmd.Flags().BoolVarP(&o.Wait, "wait", "", false, "Enable helmfile wait")
+	cmd.Flags().BoolVarP(&o.SkipChartsOnDestroy, "skip-charts-on-destroy", "", false, "Don't prepare charts when destroying releases")
 	cmd.Flags().BoolVarP(&o.Debug, "debug", "", false, "Enables debug logging in helmfile")
 
 	o.PullRequestOptions.AddFlags(cmd)
@@ -324,7 +333,12 @@ func (o *Options) createDestroyCommand(envVars map[string]string) v1alpha1.Comma
 	if o.Debug {
 		args = append(args, "--debug")
 	}
+
 	args = append(args, "destroy")
+
+	if o.SkipChartsOnDestroy {
+		args = append(args, "--skip-charts")
+	}
 
 	var env []v1alpha1.EnvVar
 	// We don't actually know which environment variables are needed. Maybe do "helm delete $(helm ls --short)" instead
@@ -361,15 +375,28 @@ func (o *Options) helmfileSyncPreview(envVars map[string]string) error {
 		Args: append(args, "repos"),
 		Env:  envVars,
 	}
-	_, err := o.CommandRunner(c)
-	if err != nil {
-		return fmt.Errorf("failed to run helmfile repos: %w", err)
+
+	if o.SkipRepos {
+		_, err := o.CommandRunner(c)
+		if err != nil {
+			return fmt.Errorf("failed to run helmfile repos: %w", err)
+		}
+	}
+
+	if o.SkipDeps {
+		args = append(args, "--skip-deps")
+	}
+
+	args = append(args, "sync")
+
+	if o.Wait {
+		args = append(args, "--wait")
 	}
 
 	// now install the charts using sync
 	c = &cmdrunner.Command{
 		Name: "helmfile",
-		Args: append(args, "sync"),
+		Args: args,
 		Env:  envVars,
 	}
 	_, syncErr := o.CommandRunner(c)
